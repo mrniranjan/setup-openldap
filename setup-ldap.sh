@@ -14,7 +14,7 @@ else
 	echo -e "Package Openldap-servers is not installed"
 fi
 }
-setupopenldap()
+basicsetupopenldap()
 {
 
 MYPWD=`pwd`
@@ -52,5 +52,69 @@ else
 	exit 1
 fi
 }
-checkpackage
-setupopenldap
+setupbackend()
+{
+#### Before we continue check if config database is setup properly, we do ldapsearch to "cn=config" , that would require us to know the binddn 
+###and bindpw, currently we use "cn=admin,cn=config" with password as "config".
+### To-do we need a method to get this info properly 
+configout=`ldapsearch -xLLL -b "cn=config" -D "cn=admin,cn=config" -w "config" -h localhost dn | grep -v ^$`
+configresult=$?
+	if [ $configresult != 0 ]; then 
+		echo "There was some problem config database not properly setup"
+		exit 1
+	fi
+#we need the suffix for which we want to setup berkely database 
+#to-do , probably it's better we get the choice of backend from user
+echo -n "Specify the suffix: "
+read suffix 
+echo $suffix
+echo -n "Specify the rootbinddn to use (Default:cn=Manager,$suffix): "
+read rootbinddn
+echo -n "Specify the rootbindpw to use (Default: redhat): "
+read rootbindpw
+##By default we use /var/lib/ldap as our default directory 
+dirtest=`test -d /var/lib/ldap`
+dirtestout=$?
+	if  [ $dirtestout != 0 ]; then
+		echo -n "Directory doesn't exist, create /var/lib/ldap with user and group permissions as ldap"
+		exit 1
+	fi
+###setup the backend 
+
+addbackend=`/usr/bin/ldapadd -x -D "cn=admin,cn=config" -w "config" -h localhost <<EOF 2>> /tmp/ldapserverlog
+dn: olcDatabase=bdb,cn=config
+objectClass: olcDatabaseConfig
+objectClass: olcBdbConfig
+olcDatabase: {1}bdb
+olcSuffix: $suffix
+olcDbDirectory: /var/lib/ldap
+olcRootDN: $rootbinddn
+olcRootPW: $rootbindpw
+olcDbCacheSize: 1000
+olcDbCheckpoint: 1024 10
+olcDbIDLcacheSize: 3000
+olcDbConfig: set_cachesize 0 10485760 0
+olcDbConfig: set_lg_bsize 2097152
+olcLimits: dn.exact="$rootbinddn" time.soft=unlimited time.hard=unlimited size.soft=unlimited size.hard=unlimited
+olcDbIndex: uid pres,eq
+olcDbIndex: cn,sn,displayName pres,eq,approx,sub
+olcDbIndex: uidNumber,gidNumber eq
+olcDbIndex: memberUid eq
+olcDbIndex: objectClass eq
+olcDbIndex: entryUUID pres,eq
+olcDbIndex: entryCSN pres,eq
+olcAccess: to attrs=userPassword by self write by anonymous auth by dn.children="ou=admins,dc=example,dc=com" write  by * none
+olcAccess: to * by self write by dn.children="ou=admins,dc=example,dc=com" write by * read
+EOF`
+
+ldapout=$?
+if [ $ldapout != 0 ]; then
+	echo -n "There seems to be some problem"
+	echo -n "Check the below errors:\n"
+	echo $addbackend
+	exit 1;
+fi
+}
+#checkpackage
+#basicsetupopenldap
+setupbackend
