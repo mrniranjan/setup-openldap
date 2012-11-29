@@ -10,9 +10,9 @@ checkpackage()
 PACKAGELDAP=`rpm -qa | grep openldap-servers 2>&1`
 CHECKPACKAGE=$?
 if test $CHECKPACKAGE == 0; then 
-	echo -e "Openldap-servers Package is installed\n" >> $mylog
+	echo -e "\n$PACKAGELDAP Packages are installed" >> $mylog
 else
-	echo -e "Package openldap-servers is not installed. Please install openldap-servers package"
+	echo -e "\nPackage openldap-servers is not installed. Please install openldap-servers package"
 	exit 1
 fi
 }
@@ -70,13 +70,27 @@ configresult=$?
 	fi
 #we need the suffix for which we want to setup berkely database 
 #to-do , probably it's better we get the choice of backend from user
-echo -n "Specify the suffix: "
-read suffix 
+suffix="dc=example,dc=com"
+echo -n "Specify the suffix(default dc=example,dc=org): "
+read suffix
+	if [ "$suffix" == "" ]; then
+		suffix="dc=example,dc=org"
+	fi
 echo "$suffix" is configured with berkely database >> $mylog
+rootbinddn=
 echo -n "Specify the rootbinddn to use (Default:cn=Manager,$suffix): "
 read rootbinddn
+        if [ "$rootbinddn" == "" ]; then
+                rootbinddn="cn=Manager,$suffix"
+                echo -e "\nroot binddn used is:$rootbinddn" >> $mylog
+        fi
+rootbindpw=
 echo -n "Specify the rootbindpw to use (Default: redhat): "
 read rootbindpw
+        if [ "$rootbindpw" == "" ];then
+                rootbindpw="redhat"
+                echo -e "\nroot bind password is :$rootbindpw" >> $mylog
+        fi
 ##By default we use /var/lib/ldap as our default directory 
 dirtest=`test -d /var/lib/ldap`
 dirtestout=$?
