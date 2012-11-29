@@ -1,0 +1,24 @@
+TODO 
+---------
+1. Need to create setup-openldap as below 
+./setup-openldap --master  to setup Master server 
+
+2. To setup slave
+./setup-openldap --slave --master=<ip-address-of-master> --config-admin=<configuration-administrator> --configpw=<configpw> --suffixrootdn=<rootdn> --suffix=<rootpw>
+
+3. Before setup slave, we take backup just in case anything happens. 
+
+4. We might want to add support to setup tls , This would require 
+
+1. Either setup up a CA 
+2. Or provide the certificate files as input 
+
+Example ./setup-openldap --master --tls_cacert=<path-to-cacert> -tls_cert=<path-to-server-cert> -tls_key=<path-to-tls-key>
+In future version we would support "Mozilla NSSDB" where cert nick name and mozdb dir is specified 
+
+5. Configure overlay properly or meta directory ?
+
+6. Rewrite everything in perl ? (to look more enterprisey ?)  
+
+7. The more broader is to configure openldap that can be used to store kerberos tickets, dns, dhcp, samba ? (more like what ipa does)
+
