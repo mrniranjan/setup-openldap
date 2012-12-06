@@ -1,34 +1,41 @@
 #!/bin/bash 
-## This script does what the setup-ds-admin.pl does, It configures the ldap server, we take the "base suffix" as the input 
-### and configure openldap for suffix given
-### We use an example slapd.conf first 
-###probably we might want to check if the openldap-servers packages is available 
-### Check if Openldap packages are installed. 
-mylog=/tmp/ldapserver-install-log
-slapdconfigdir=/etc/openldap/slapd.d/
-workingdir="`pwd`"
-sampleconfig="$workingdir/sample-slapd.conf"
-slaptest=/usr/sbin/slaptest
-slapdinit=/etc/init.d/slapd
-RETVAL=0
-myldif=/tmp/base.ldif
-accesslogdir="/var/lib/ldap-accesslog"
-suffixbackend="/var/lib/ldap"
-ldapadd=/usr/bin/ldapadd
-ldapsearch=/usr/bin/ldapsearch
-ldapmodify=/usr/bin/ldapmodify
-slappasswd=/usr/sbin/slappasswd
+# Author: M.R.Niranjan (niranjan.ashok@gmail.com)
+#
+# This program is free software; you can redistribute it and/or modify
+# 
+# This program is distributed in the hope that it will be useful to setup OpenLDAP server. 
+# This program comes WITHOUT ANY WARRANTY; Any loss of data occurring due to this script cannot be claimed from author
+# Do not run this script on Production systems , First run this script on test (non-production systems) before deploying
+# it on Production Systems.
+#
+# Any comments or improvements can be mailed to niranjan.ashok@gmail.com
+#
+#
+# Purpose: This script Configures OpenLDAP instance with given suffix on a bdb backend. Additionally it also configures
+# Replication between two ldap servers 
+# Read README file for more documentation on this shell script
+
+## Our environmental Definition
+source ./defines.sh
+source ./common.sh
+
+
+		### This function checks if openldap-servers package is installed ###
+
 checkpackage()
 {
-PACKAGELDAP=`rpm -qa | grep openldap-servers 2>&1`
+ldappackage=`rpm -qa | grep openldap-servers 2>&1`
 RETVAL=$?
 if test $RETVAL == 0; then 
-	echo -e "\n$PACKAGELDAP Packages are installed" >> $mylog
+	echo -e "\n$ldappackage Packages are installed" >> $mylog
 else
-	echo -e "\nPackage openldap-servers is not installed. Please install openldap-servers package"
+	echo -e "\nPackage openldap-servers is not installed. Please install openldap-servers rpm"
 	exit 1
 fi
 }
+
+		### This functions converts the sample slapd.conf to cn=config format.  ###
+
 basicsetupopenldap()
 {
 if `test -f $sampleconfig`; then
@@ -40,13 +47,15 @@ else
 fi
 
 #create the slapd.d directory first 
-if `test -d $slapdconfigdir`; then
-	echo "Directory already exists, backup and remove the directory, we are creating fresh instance" >> $mylog
+if `test -d $slapdconfigdir	`; then
+	echo -e "$slapdconfigdir already exists" >> $mylog
+	echo -e "\nDirectory already exists, backup and remove the directory, we are creating fresh instance"
 	exit 1
 else
-	 echo -e "\nCreating /etc/openldap/slapd.d directory with user and group permissions of ldap" >> $mylog
+	 echo -e "\nCreating $slapdconfigdir directory with user and group permissions of ldap" >> $mylog
 	`mkdir $slapdconfigdir`
 	`chown ldap.ldap $slapdconfigdir`
+	`restorecon -R -v $slapdconfigdir`
 fi
 ##run slaptest using the sample slapd.conf 
 slaptestout=`$slaptest -f $sampleconfig -F $slapdconfigdir`
@@ -68,11 +77,16 @@ else
 	exit 1
 fi
 }
+
+		### This function sets up berkely database for a given suffix.####
+
+
 setupbackend()
 {
-#### Before we continue check if config database is setup properly, we do ldapsearch to "cn=config" , that would require us to know the binddn 
-###and bindpw, currently we use "cn=admin,cn=config" with password as "config".
-### To-do we need a method to get this info properly 
+#Before we continue, check if config database is setup properly, we do ldapsearch to "cn=config", that would require us to know the binddn and bindpw, currently we use "cn=admin,cn=config" with password as "config". */
+
+# To-do we need a method to get this info properly 
+
 configout=`$ldapsearch -xLLL -b "cn=config" -D "cn=admin,cn=config" -w "config" -h localhost dn | grep -v ^$`
 RETVAL=$?
 	if [ $RETVAL != 0 ]; then 
@@ -80,10 +94,10 @@ RETVAL=$?
 		echo $configout >> $mylog
 		exit 1
 	fi
-#we need the suffix for which we want to setup berkely database 
+#we need the suffix for which we want to setup berkely database.
 #To-do , probably it's better we get the choice of backend from user
-
 #Here if we are called from slave, we do not want to call the below again but set the suffix to what provider has 
+
 if [ "$providersuffix" == "" ]; then
 {
 	echo -n "Specify the suffix(default dc=example,dc=org): "
@@ -119,8 +133,8 @@ RETVAL=$?
 		echo -e "\nDirectory doesn't exist, create /var/lib/ldap with user and group permissions as ldap" >> $mylog
 		exit 1
 	fi
-###setup the backend 
-### probably insted of doing below can we output this in an ldif file and then add it, does that look clean ?
+###setup the backend,  probably insted of doing below can we output this in an ldif file and then add it, does that look clean ?
+
 hashrootbindpw=`$slappasswd -s $rootbindpw`
 addbackend=`$ldapadd -x -D "cn=admin,cn=config" -w "config" -h $(hostname) <<EOF 2>> $mylog
 dn: olcDatabase=bdb,cn=config
@@ -155,6 +169,9 @@ if [ $RETVAL != 0 ]; then
 	exit 1;
 fi
 }
+
+		### This function adds syncprov and accesslog overlay ####
+
 addoverlay()
 {
 ## If we are master we also need to enable syncprov module overlay and accesslog module overlay
@@ -198,6 +215,9 @@ else
 	echo -e "\nSuccessfully added  syncprov overlay for $suffix \n"	
 fi
 }
+
+		### This function loads the ppolicy, accesslog and syncprov modules to cn=config database. ###
+
 enablemodules()
 {
 ### we load ppolicy, accesslog, syncprov
@@ -245,7 +265,7 @@ RETVAL=$?
 fi
 }
 
-### We create a minimum DIT and load in to ldap server 
+		### We create a minimum DIT and load in to ldap server ###
 
 enabledit()
 {
@@ -275,7 +295,7 @@ RETVAL=$?
 rm -f $myldif 
 }
 
-### Setup Accesslog backend on Master 
+		### Setup Accesslog backend on Master ###
 
 setupaccesslog()
 {
@@ -351,6 +371,9 @@ RETVAL=$?
         fi
 
 }
+
+		### This function contacts master OpenLDAP server and configures accesslog to enable unlimited read access to supplier binddn ####
+
 contactprovider()
 {
 ## We first need to check if master is reachable from slave 
@@ -362,13 +385,13 @@ read providerhost
                 echo -e "\nDid not enter provider hostname:"
 		exit 1
         fi
-echo -n "Specify the provider port number on which slapd is running: "
-read providerport
-echo -n "Specify the suffix configured on $providerhost for which consumer should be configured: " 
-read providersuffix
+		echo -n "Specify the provider port number on which slapd is running: "
+		read providerport
+		echo -n "Specify the suffix configured on $providerhost for which consumer should be configured: " 
+		read providersuffix
 
-providersuffixtest=`$ldapsearch -xLLL -b "$providersuffix" -s base -p $providerport -h $providerhost` 2>> /dev/stderr
-RETVAL=$?
+		providersuffixtest=`$ldapsearch -xLLL -b "$providersuffix" -s base -p $providerport -h $providerhost` 2>> /dev/stderr
+		RETVAL=$?
 	if [ $RETVAL != 0 ];then
 		echo -e "\nProvider not reachable"
 		exit 1;
@@ -412,6 +435,7 @@ RETVAL=$?
 			### First we create access control to provide unlimited access to cn=accesslog
 			### find the dn of cn=accesslog database
 			accesslogdn=$($ldapsearch -xLLL -b "cn=config" -D "$configadmin" -w "$configpw" -h "$providerhost" "(&(objectClass=olcBdbConfig)(olcSuffix="cn=accesslog"))" dn | awk -F " " '{print $2}')
+
 access1=`$ldapmodify -x -D "$configadmin" -w "$configpw" -h "$providerhost" <<EOF 2>> $mylog
 dn: $accesslogdn
 changetype: modify
@@ -458,6 +482,9 @@ EOF`
 	}
 	fi	
 }
+
+			### This function creates sync replication agreement on Slave Server ###
+
 configureconsumer()
 {
 syncagreement=`ldapmodify -x -D "cn=admin,cn=config" -w "config" -h $(hostname) <<EOF 2>> $mylog
@@ -478,15 +505,108 @@ RETVAL=$?
 	fi
 }	
 
-RETVAL=0
-## We are called as:
+		### This function configures TLS/SSL for slapd to listen on port 636 ###
 
+conf_tls()
+{
+### We setup TLS parameters to enable SSL/TLS for slapd. The attributes are: 
+#olcTLSCACertificateFile: /etc/pki/tls/certs/cacert.pem  CA certificate
+#olcTLSCertificateFile: /etc/pki/tls/certs/ldap.pem Server Cert
+#olcTLSCertificateKeyFile: /etc/pki/tls/certs/ldap-key.pem  Server Private key 
+
+### The below code currently asks the path to the certs, We do not generate the certs and TLS Verify Client as "allow"
+
+echo -e "Configuring TLS/SSL for slapd.Provide the Path where CA certificate, Server Cert and Private Key file are stored"
+echo -n "CA certificate (Default: $defaultcacert)"
+read cacert
+	if [ "$cacert" == "" ];then
+		cacert="$defaultcacert"
+	fi
+echo -n "Server Certificate (Default: $defaultservercert): "
+read server
+	if [ "$server" == "" ];then
+		server="$defaultservercert"
+	fi
+echo -n "Server Cert's Private key (Default: $defaultserverprivatekey): "
+read serverkey
+	if [ "$serverkey" == "" ]; then
+		serverkey="$defaultserverprivatekey"
+	fi
+enabletls=`$ldapmodify -x -D "cn=admin,cn=config" -w "config" -h $(hostname) <<EOF 2>> $mylog
+dn: cn=config
+changetype: modify
+add: olcTLSCACertificateFile
+olcTLSCACertificateFile:  $defaultcacert
+-
+add: olcTLSCertificateFile
+olcTLSCertificateFile: $defaultservercert
+-
+add: olcTLSCertificateKeyFile
+olcTLSCertificateKeyFile: $defaultserverprivatekey
+-
+replace: olcTLSVerifyClient
+olcTLSVerifyClient: allow
+EOF`
+RETVAL=$?
+	if [  $RETVAL != 0 ];then
+	{
+                echo -e "\n There was some problem adding TLS/SSL Parameters to cn=config, check $mylog for more details"
+                echo -e "\n$enabletls" >> $mylog
+                exit 1
+	}
+	else 
+	{
+		#check if SLAPD_LDAPS=no is set in /etc/sysconfig/ldap 
+		LDAPS=$(grep ^SLAPD_LDAPS $sysconf_ldap | grep "no")
+		if [ "$LDAPS" == "SLAPD_LDAPS=no" ]; then
+		{
+			sed 's/SLAPD_LDAPS=no/SLAPD_LDAPS=yes/' $sysconf_ldap > $sysconf_ldap.new
+			/bin/cp $sysconf_ldap $sysconf_ldap.orig
+			/bin/cp -f $sysconf_ldap.new $sysconf_ldap
+			echo -e "\nTLS/SSL has been Set, /etc/sysconfig/ldap file has been modified to set "SLAPD_LDAPS=yes""
+			echo -e "\nslapd service will be restarted now"
+
+			slapdstart=`$slapdinit restart` >> $mylog
+			RETVAL=$?
+			if [ $RETVAL != 0 ]; then
+				echo -e "\nThere was some problem starting slapd, check $mylog"
+				echo $RETVAL >> $mylog
+				exit 1
+			fi
+			checksslport=`$netstat -plant | grep ^[t][c]p | grep 636`
+			RETVAL=$?
+			if [ $RETVAL != 0 ]; then
+                                echo -e "\nThere was some problem, slapd doesn't seem to run on port 636, check $mylog"
+                                echo $RETVAL >> $mylog
+                                exit 1
+                        fi
+			echo -e "\nslapd service is running port 636\n"
+			
+		}	
+		else 
+		{
+			echo -e "\nRestarting slapd service"
+			$slapdinit restart >> $mylog
+		
+		}
+		fi
+		
+		
+	}	
+	fi
+	
+}
+
+RETVAL=0
+
+## We are called as:
 case "$1" in 
 	--master)
 		master=true
 		checkpackage
 		basicsetupopenldap
 		enablemodules
+		conf_tls
 		setupbackend
 		enabledit
 		setupaccesslog
@@ -509,4 +629,5 @@ case "$1" in
 	*)	
 		echo $"Usage: $0 {--master|--slave}"
 		RETVAL=2
+		;;
 esac
