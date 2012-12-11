@@ -48,10 +48,8 @@ Steps to run the script
 		./setup-ldap.sh --master (To configure provider)
 		./setup-ldap.sh --slave (To configure consumer)
 
-5. when run as ./setup-ldap.sh --master configure cn=config database, suffix (as provided by user) with bdb 
-backend . This backend uses /var/lib/ldap , and also sets up cn=accesslog suffix which uses /var/lib/ldap-accesslog directory 
+5. when run as ./setup-ldap.sh --master configure cn=config database, suffix (as provided by user) with bdb backend . This backend uses /var/lib/ldap , and also sets up cn=accesslog suffix which uses /var/lib/ldap-accesslog directory 
 
-6.When run as ./setup-ldap.sh --slave configures cn=config database, suffix (as provided by user) with bdb
-backend . This backend uses /var/lib/ldap , and also sets up syncreplication agreement with provider. 
+6.When run as ./setup-ldap.sh --slave configures cn=config database, suffix (as provided by user) with bdb backend . This backend uses /var/lib/ldap , and also sets up syncreplication agreement with provider. 
 
 7. This script also configure TLS/SSL for slapd when certificate paths are provided
