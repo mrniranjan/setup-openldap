@@ -20,7 +20,7 @@ source ./defines.sh
 source ./common.sh
 
 
-		### This function checks if openldap-servers package is installed ###
+		### This function checks if user wants to continue with Setup or not ###
 
 checkcont()
 {
@@ -35,6 +35,8 @@ checkcont()
 	fi
 	fi
 }
+
+		### This function checks if openldap-servers package is installed ###
 checkpackage()
 {
 ldappackage=`rpm -qa | grep openldap-servers 2>&1`
