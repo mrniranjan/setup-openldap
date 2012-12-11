@@ -3,7 +3,6 @@
 #
 # This program is free software; you can redistribute it and/or modify
 # 
-# This program is distributed in the hope that it will be useful to setup OpenLDAP server. 
 # This program comes WITHOUT ANY WARRANTY; Any loss of data occurring due to this script cannot be claimed from author
 # Do not run this script on Production systems , First run this script on test (non-production systems) before deploying
 # it on Production Systems.
@@ -13,6 +12,7 @@
 #
 # Purpose: This script Configures OpenLDAP instance with given suffix on a bdb backend. Additionally it also configures
 # Replication between two ldap servers 
+#
 # Read README file for more documentation on this shell script
 
 ## Our environmental Definition
@@ -22,6 +22,19 @@ source ./common.sh
 
 		### This function checks if openldap-servers package is installed ###
 
+checkcont()
+{
+	echo -e "\n$breakline"
+	echo -e "$welcome"
+	echo -n "Would you like to continue with set up? [yes]: "
+	read cont
+	if [ "$cont" == "" ]; then
+		cont=yes
+	else if	[ "$cont" != "yes" ] || [ "$cont" != "YES" ] || [ "$cont" != "Yes" ]; then
+		exit 1;
+	fi
+	fi
+}
 checkpackage()
 {
 ldappackage=`rpm -qa | grep openldap-servers 2>&1`
@@ -52,12 +65,26 @@ if `test -d $slapdconfigdir	`; then
 	echo -e "\nDirectory already exists, backup and remove the directory, we are creating fresh instance"
 	exit 1
 else
+	 echo -e "\n$breakline"
+	 echo -e "\n$configdb"
 	 echo -e "\nCreating $slapdconfigdir directory with user and group permissions of ldap" >> $mylog
 	`mkdir $slapdconfigdir`
 	`chown ldap.ldap $slapdconfigdir`
 	`restorecon -R -v $slapdconfigdir`
 fi
 ##run slaptest using the sample slapd.conf 
+
+echo -e "\n$breakline"
+echo -e "$configdbadmin"
+echo -n "Enter rootpw for $configrootdn (Default: config): "
+read configrootpw
+	if [ "$configrootpw" == "" ];then
+		configrootpw="config"
+	fi
+echo -e "\nConfig password for $configrootdn is $configrootpw" >> $mylog
+
+# we hash configrootpw with SHA 
+hashconfigrootpw=`$slappasswd -s $configrootpw`
 slaptestout=`$slaptest -f $sampleconfig -F $slapdconfigdir`
 RETVAL=$?
 if [ $RETVAL == 0 ]; then
@@ -69,6 +96,12 @@ if [ $RETVAL == 0 ]; then
 		echo "slapd did not start"
 		exit
 	else 
+configrootmod=`$ldapmodify -x -D "$configrootdn" -w config -h $(hostname) <<EOF >>$mylog
+dn: olcDatabase={0}config,cn=config
+changetype: modify
+replace: olcRootPW
+olcRootPW: $hashconfigrootpw
+EOF`
 		echo -e "\nslapd service is started with cn=config and cn=monitor database" >> $mylog
 	fi
 	
@@ -87,7 +120,7 @@ setupbackend()
 
 # To-do we need a method to get this info properly 
 
-configout=`$ldapsearch -xLLL -b "cn=config" -D "cn=admin,cn=config" -w "config" -h localhost dn | grep -v ^$`
+configout=`$ldapsearch -xLLL -b "cn=config" -D "$configrootdn" -w "$configrootpw" -h localhost dn | grep -v ^$`
 RETVAL=$?
 	if [ $RETVAL != 0 ]; then 
 		echo -e "\nThere was some problem config database not properly setup" >> $mylog
@@ -100,11 +133,14 @@ RETVAL=$?
 
 if [ "$providersuffix" == "" ]; then
 {
+	echo -e "$confsuffix"
 	echo -n "Specify the suffix(default dc=example,dc=org): "
 	read suffix
 		if [ "$suffix" == "" ]; then
 			suffix="dc=example,dc=org"
 		fi
+	echo -e "$breakline"
+	echo -e "$suffixadmin"
 	echo "$suffix" is configured with berkely database >> $mylog
 	echo -n "Specify the rootbinddn to use (Default:cn=Manager,$suffix): "
 	read rootbinddn
@@ -136,7 +172,7 @@ RETVAL=$?
 ###setup the backend,  probably insted of doing below can we output this in an ldif file and then add it, does that look clean ?
 
 hashrootbindpw=`$slappasswd -s $rootbindpw`
-addbackend=`$ldapadd -x -D "cn=admin,cn=config" -w "config" -h $(hostname) <<EOF 2>> $mylog
+addbackend=`$ldapadd -x -D "$configrootdn" -w "$configrootpw" -h $(hostname) <<EOF 2>> $mylog
 dn: olcDatabase=bdb,cn=config
 objectClass: olcDatabaseConfig
 objectClass: olcBdbConfig
@@ -170,12 +206,12 @@ if [ $RETVAL != 0 ]; then
 fi
 }
 
-		### This function adds syncprov and accesslog overlay ####
+		### This function adds syncprov and accesslog overlay to the bdb backend used by suffix ####
 
 addoverlay()
 {
 ## If we are master we also need to enable syncprov module overlay and accesslog module overlay
-accesslogoverlay=`$ldapadd -x -D "cn=admin,cn=config" -w "config" -h $(hostname) <<EOF 2>> $mylog
+accesslogoverlay=`$ldapadd -x -D "$configrootdn" -w "$configrootpw" -h $(hostname) <<EOF 2>> $mylog
 dn: olcOverlay=accesslog,olcDatabase={2}bdb,cn=config
 changetype: add
 objectClass: olcOverlayConfig
@@ -192,10 +228,10 @@ if [ $RETVAL != 0 ]; then
 	echo $accesslogoverlay >> $mylog
 	exit 1
 else
-	echo -e "\nSuccessfully added accesslog overlay for $suffix \n"   
+	echo -e "\nSuccessfully added accesslog overlay for $suffix \n"   >> $mylog
 	echo $accesslogoverlay >> $mylog
 fi
-syncprovoverlay=`$ldapadd -x -D "cn=admin,cn=config" -w "config" -h $(hostname) <<EOF 2>> $mylog
+syncprovoverlay=`$ldapadd -x -D "$configrootdn" -w "$configrootpw" -h $(hostname) <<EOF 2>> $mylog
 dn: olcOverlay=syncprov,olcDatabase={2}bdb,cn=config
 changetype: add
 objectClass: olcOverlayConfig
@@ -212,7 +248,8 @@ if [ $RETVAL != 0 ]; then
 	exit 1
 }
 else
-	echo -e "\nSuccessfully added  syncprov overlay for $suffix \n"	
+	echo -e "\nSuccessfully added  syncprov overlay for $suffix \n"	>> $mylog
+
 fi
 }
 
@@ -222,7 +259,7 @@ enablemodules()
 {
 ### we load ppolicy, accesslog, syncprov
 ### Load the ppolicy.la
-ppolicyadd=`$ldapadd -x -D "cn=admin,cn=config" -w "config" -h localhost <<EOF 2>> $mylog
+ppolicyadd=`$ldapadd -x -D "$configrootdn" -w "$configrootpw" -h localhost <<EOF 2>> $mylog
 dn: cn=module,cn=config
 objectClass: olcModuleList
 cn: module
@@ -235,7 +272,7 @@ RETVAL=$?
 		exit 1
 	fi
 ### Load the syncprov module 
-syncprovadd=`$ldapadd -x -D "cn=admin,cn=config" -w "config" -h localhost <<EOF 2>> $mylog
+syncprovadd=`$ldapadd -x -D "$configrootdn" -w "$configrootpw" -h localhost <<EOF 2>> $mylog
 dn: cn=module,cn=config
 objectClass: olcModuleList
 cn: module
@@ -250,7 +287,7 @@ RETVAL=$?
 	  fi
 if [ $master ];then
 ### We enable accesslog module 
-accesslogadd=`$ldapadd -x -D "cn=admin,cn=config" -w "config" -h localhost <<EOF 2>> $mylog
+accesslogadd=`$ldapadd -x -D "$configrootdn" -w "$configrootpw" -h localhost <<EOF 2>> $mylog
 dn: cn=module,cn=config
 objectClass: olcModuleList
 cn: module
@@ -304,13 +341,14 @@ setupaccesslog()
         	echo "Directory already exists, backup and remove the directory, we are creating fresh instance" >> $mylog
 	        exit 1
 	fi
+echo -e "\n$accesslogdb"
 `mkdir $accesslogdir`
 `chown ldap.ldap $accesslogdir`
 echo -n "Specify the Root Binddn for accesslog (Default:cn=accesslog): "
 read accesslogbinddn
         if [ "$accesslogbinddn" == "" ]; then
                 accesslogbinddn="cn=accesslog"
-                echo -e "\nroot binddn used is:$rootbinddn" >> $mylog
+                echo -e "\nroot binddn accesslogused is:$rootbinddn" >> $mylog
         fi
 echo -n "Specify the bindpw to use for $accesslogbinddn (Default: redhat): "
 read accesslogbindpw
@@ -319,7 +357,7 @@ read accesslogbindpw
                 echo -e "\nroot bind password is :$rootbindpw" >> $mylog
         fi
 hashaccesslogbindpw=`$slappasswd -s $accesslogbindpw`
-addaccesslogbackend=`$ldapadd -x -D "cn=admin,cn=config" -w "config" -h localhost <<EOF 2>> $mylog
+addaccesslogbackend=`$ldapadd -x -D "$configrootdn" -w "$configrootpw" -h localhost <<EOF 2>> $mylog
 dn: olcDatabase=bdb,cn=config
 objectClass: olcDatabaseConfig
 objectClass: olcBdbConfig
@@ -350,9 +388,10 @@ RETVAL=$?
 	        echo $addaccesslogbackend >> $mylog
         	exit 1;
 	else
-		echo -e "\nOpenldap has been configured as Provider for $suffix\n"
+		echo -e "\nOpenldap has been configured as Provider for $suffix\n" >>$mylog
+		echo -e "\n$successprovider"
 	fi
-addaccesslogoverlay=`$ldapadd -x -D "cn=admin,cn=config" -w "config" -h $(hostname) <<EOF 2>>$mylog
+addaccesslogoverlay=`$ldapadd -x -D "$configrootdn" -w "$configrootpw" -h $(hostname) <<EOF 2>>$mylog
 dn: olcOverlay=syncprov,olcDatabase={3}bdb,cn=config
 changetype: add
 objectClass: olcOverlayConfig
@@ -367,7 +406,7 @@ RETVAL=$?
                 echo $addaccesslogoverlay >> $mylog
                 exit 1;
         else
-                echo -e "\nAccesslog overlay has been configured\n"
+                echo -e "\nAccesslog overlay has been configured\n" >> $mylog
         fi
 
 }
@@ -410,10 +449,10 @@ read providerhost
 		fi
 		if [ "$repbinddn" == "" ];then
 			repbinddn="cn=replicator,$providersuffix"
-			echo -n "Specify the Configuration Administrator dn of $providerhost(Default:cn=admin,cn=config):"
+			echo -n "Specify the Configuration Administrator dn of $providerhost(Default:$configrootdn):"
 			read configadmin
 			if [ "$configadmin" == "" ]; then
-				configadmin="cn=admin,cn=config"
+				configadmin="$configrootdn"
 			fi
 			echo -n "Specify the password of $configadmin: "
 			read configpw
@@ -487,7 +526,7 @@ EOF`
 
 configureconsumer()
 {
-syncagreement=`ldapmodify -x -D "cn=admin,cn=config" -w "config" -h $(hostname) <<EOF 2>> $mylog
+syncagreement=`ldapmodify -x -D "$configrootdn" -w "$configrootpw" -h $(hostname) <<EOF 2>> $mylog
 dn: olcDatabase={2}bdb,cn=config
 changetype: modify
 add: olcSyncRepl
@@ -515,8 +554,8 @@ conf_tls()
 #olcTLSCertificateKeyFile: /etc/pki/tls/certs/ldap-key.pem  Server Private key 
 
 ### The below code currently asks the path to the certs, We do not generate the certs and TLS Verify Client as "allow"
-
-echo -e "Configuring TLS/SSL for slapd.Provide the Path where CA certificate, Server Cert and Private Key file are stored"
+echo -e "$breakline"
+echo -e "$tlssetup"
 echo -n "CA certificate (Default: $defaultcacert)"
 read cacert
 	if [ "$cacert" == "" ];then
@@ -532,7 +571,7 @@ read serverkey
 	if [ "$serverkey" == "" ]; then
 		serverkey="$defaultserverprivatekey"
 	fi
-enabletls=`$ldapmodify -x -D "cn=admin,cn=config" -w "config" -h $(hostname) <<EOF 2>> $mylog
+enabletls=`$ldapmodify -x -D "$configrootdn" -w "$configrootpw" -h $(hostname) <<EOF 2>> $mylog
 dn: cn=config
 changetype: modify
 add: olcTLSCACertificateFile
@@ -587,6 +626,7 @@ RETVAL=$?
 		{
 			echo -e "\nRestarting slapd service"
 			$slapdinit restart >> $mylog
+			echo -e "$breakline"
 		
 		}
 		fi
@@ -603,6 +643,7 @@ RETVAL=0
 case "$1" in 
 	--master)
 		master=true
+		checkcont
 		checkpackage
 		basicsetupopenldap
 		enablemodules
