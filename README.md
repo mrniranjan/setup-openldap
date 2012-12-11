@@ -28,23 +28,25 @@ OpenLDAP
 Steps to run the script 
 ========================
 1. Get the latest code from github
-git clone git@github.com/mrniranjan/setup-openldap.git
+
+		git clone git@github.com/mrniranjan/setup-openldap.git
 
 2. The following files will be copied 
 
-common.sh  
-create_ou.conf  
-defines.sh  
-README  
-sample-slapd.conf  
-setup-ldap.sh  
-TODO
+		common.sh  
+		create\_ou.conf  
+		defines.sh  
+		README  
+		sample-slapd.conf  
+		setup-ldap.sh  
+		TODO
 
-3.Make sure openldap-servers package  is installed on RHEL
+3.Make sure openldap-servers package is installed on RHEL
 
 4.Run the script as:
-./setup-ldap.sh --master (To configure provider)
-./setup-ldap.sh --slave (To configure consumer)
+
+		./setup-ldap.sh --master (To configure provider)
+		./setup-ldap.sh --slave (To configure consumer)
 
 5. when run as ./setup-ldap.sh --master configure cn=config database, suffix (as provided by user) with bdb 
 backend . This backend uses /var/lib/ldap , and also sets up cn=accesslog suffix which uses /var/lib/ldap-accesslog directory 
@@ -53,5 +55,3 @@ backend . This backend uses /var/lib/ldap , and also sets up cn=accesslog suffix
 backend . This backend uses /var/lib/ldap , and also sets up syncreplication agreement with provider. 
 
 7. This script also configure TLS/SSL for slapd when certificate paths are provided
-
-
