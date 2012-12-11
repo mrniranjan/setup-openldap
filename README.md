@@ -1,5 +1,3 @@
-# Creates a file called "README" in your setup-openldap directory
-
 Info 
 ====
 setup-ldap.sh is a shell script which configures OpenLDAP server on Red Hat Enterprise Linux 6.3. 
