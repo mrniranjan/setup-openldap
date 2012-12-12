@@ -23,9 +23,6 @@ In future versions, I would like to add the following:
 
 1. Configure a samba PDC 
 2. Congigure a Samba BDC 
-3. Provide scripts to add dhcp,dns,kerberos schema to OpenLDAP, and provide command line utilities to Configure zones which will be saved in 
-OpenLDAP 
-4. Provide scripts to Integrate kerberos,dns,dhcp to act as an Identity Server. 
 
 Steps to run the script 
 ========================
