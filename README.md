@@ -20,7 +20,7 @@ Future Work(Roadmap)
 In future versions, I would like to add the following:
 
 1. Configure a samba PDC 
-2. Congigure a Samba BDC 
+2. Configure a Samba BDC 
 
 Steps to run the script 
 ========================
